@@ -25,6 +25,11 @@ export interface GitpodClient {
     onInstanceUpdate(instance: WorkspaceInstance): void;
     onWorkspaceImageBuildLogs: WorkspaceImageBuild.LogCallback;
     onHeadlessWorkspaceLogs(evt: HeadlessLogEvent): void;
+
+    //#region propagating reconnection to iframe
+    notifyDidOpenConnection(): void;
+    notifyDidCloseConnection(): void;
+    //#endregion
 }
 
 export const GitpodServer = Symbol('GitpodServer');
@@ -286,6 +291,30 @@ export class GitpodCompositeClient<Client extends GitpodClient> implements Gitpo
         }
     }
 
+    notifyDidOpenConnection(): void {
+        for (const client of this.clients) {
+            if (client.notifyDidOpenConnection) {
+                try {
+                    client.notifyDidOpenConnection();
+                } catch (error) {
+                    console.error(error)
+                }
+            }
+        }
+    }
+
+    notifyDidCloseConnection(): void {
+        for (const client of this.clients) {
+            if (client.notifyDidCloseConnection) {
+                try {
+                    client.notifyDidCloseConnection();
+                } catch (error) {
+                    console.error(error)
+                }
+            }
+        }
+    }
+
 }
 
 export type GitpodService = GitpodServiceImpl<GitpodClient, GitpodServer>;
@@ -336,10 +365,12 @@ export class WorkspaceInstanceUpdateListener {
 
 export class GitpodServiceImpl<Client extends GitpodClient, Server extends GitpodServer> {
 
-    protected compositeClient = new GitpodCompositeClient<Client>();
+    private readonly compositeClient = new GitpodCompositeClient<Client>();
 
     constructor(public readonly server: JsonRpcProxy<Server>) {
         server.setClient(this.compositeClient);
+        server.onDidOpenConnection(() => this.compositeClient.notifyDidOpenConnection());
+        server.onDidCloseConnection(() => this.compositeClient.notifyDidCloseConnection());
     }
 
     public registerClient(client: Partial<Client>): Disposable {
