@@ -7,6 +7,7 @@
 import "reflect-metadata";
 import * as React from 'react';
 
+import { ConnectionError } from 'vscode-jsonrpc';
 import { GitpodService, WorkspaceCreationResult, CreateWorkspaceMode } from '@gitpod/gitpod-protocol';
 
 import { StartWorkspace } from "../start-workspace";
@@ -101,16 +102,22 @@ export class CreateWorkspace extends React.Component<CreateWorkspaceProps, Creat
     }
 
     protected async doCreateWorkspace(createPromise: Promise<WorkspaceCreationResult>): Promise<WorkspaceCreationResult | undefined> {
-        try {
-            const createWorkspaceResult = await createPromise;
-            this.setState({ createWorkspaceResult, error: undefined });
-            return createWorkspaceResult;
-        } catch (e) {
-            if (e && e instanceof Error) {
-                await this.handleErrorDuringMount(e);
+        while (true) {
+            try {
+                const createWorkspaceResult = await createPromise;
+                this.setState({ createWorkspaceResult, error: undefined });
+                return createWorkspaceResult;
+            } catch (e) {
+                if (e instanceof ConnectionError) {
+                    // disconnected, try again
+                    continue;
+                }
+                if (e && e instanceof Error) {
+                    await this.handleErrorDuringMount(e);
+                }
+                return undefined;
             }
         }
-        return;
     }
 
     protected pollWorkspacePrebuild(pwsid: string) {
@@ -257,10 +264,10 @@ export class CreateWorkspace extends React.Component<CreateWorkspaceProps, Creat
                     <h3 className="heading">The repository you are trying to use will become available once we are out of the beta phase.</h3>
                     <p>Until then, please try Gitpod with one of the repositories below:</p>
                     <Context.Consumer>
-                        {(ctx) => 
+                        {(ctx) =>
                             <FeaturedRepositories
                                 service={this.props.service}
-                                disableActions={ctx.disabledActions} />    
+                                disableActions={ctx.disabledActions} />
                         }
                     </Context.Consumer>
                 </ApplicationFrame>
@@ -278,7 +285,7 @@ export class CreateWorkspace extends React.Component<CreateWorkspaceProps, Creat
                 return (
                     <ApplicationFrame service={this.props.service}>
                         <Context.Consumer>
-                            {(ctx) => 
+                            {(ctx) =>
                                 <RunningWorkspaceSelector
                                     service={this.props.service}
                                     disableActions={ctx.disabledActions}
@@ -299,7 +306,7 @@ export class CreateWorkspace extends React.Component<CreateWorkspaceProps, Creat
                         service={this.props.service}
                         prebuildingWorkspaceId={runningPrebuild.workspaceID}
                         justStarting={runningPrebuild.starting}
-                        onBuildDone={() => this.doCreateWorkspaceWithMode(CreateWorkspaceMode.UsePrebuild)}
+                        onWatchPrebuild={() => this.doCreateWorkspaceWithMode(CreateWorkspaceMode.UsePrebuild)}
                         onIgnorePrebuild={() => this.doCreateWorkspaceWithMode(CreateWorkspaceMode.ForceNew)} />
                 );
             }
